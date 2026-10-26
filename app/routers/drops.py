@@ -6,9 +6,10 @@ from sqlmodel import Session, func, select
 
 from app.auth import current_artist
 from app.db import get_session
-from app.models import RSVP, Artist, Channel, Drop, DropStatus, Notification, SendStatus
+from app.models import RSVP, Artist, Drop, DropStatus, Notification
 from app.release import release_drop
-from app.schemas import ChannelStats, DropIn, DropOut, DropPatch, DropStats
+from app.schemas import DropIn, DropOut, DropPatch, DropStats
+from app.services import send_stats
 
 router = APIRouter(prefix="/drops", tags=["drops"])
 LOCKED = {DropStatus.sending, DropStatus.sent}
@@ -93,7 +94,7 @@ def schedule_drop(
     if drop.status != DropStatus.draft:
         raise HTTPException(status.HTTP_409_CONFLICT, f"Drop is already {drop.status.value}")
     if drop.release_at is None:
-        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "Set release_at first")
+        raise HTTPException(422, "Set release_at first")
     drop.status = DropStatus.scheduled
     session.add(drop)
     session.commit()
@@ -136,27 +137,4 @@ def drop_stats(
     drop = owned_drop(drop_id, artist, session)
     rsvps = session.exec(select(func.count()).select_from(RSVP).where(RSVP.drop_id == drop.id)).one()
 
-    per_channel = {Channel.email: ChannelStats(), Channel.sms: ChannelStats()}
-    rows = session.exec(
-        select(Notification.channel, Notification.status, func.count())
-        .where(Notification.drop_id == drop.id)
-        .group_by(Notification.channel, Notification.status)
-    ).all()
-    for channel, send_status, n in rows:
-        setattr(per_channel[channel], send_status.value, n)
-    clicks = session.exec(
-        select(Notification.channel, func.count())
-        .where(Notification.drop_id == drop.id, Notification.clicked_at.is_not(None))
-        .group_by(Notification.channel)
-    ).all()
-    for channel, n in clicks:
-        per_channel[channel].clicked = n
-
-    reached = sum(s.sent + s.delivered for s in per_channel.values())
-    clicked = sum(s.clicked for s in per_channel.values())
-    return DropStats(
-        rsvps=rsvps,
-        email=per_channel[Channel.email],
-        sms=per_channel[Channel.sms],
-        click_rate=round(clicked / reached, 3) if reached else 0.0,
-    )
+    return DropStats(rsvps=rsvps, **send_stats(session, Notification.drop_id == drop.id).model_dump())

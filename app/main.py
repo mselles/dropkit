@@ -9,7 +9,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from app import config
 from app.db import create_db
 from app.release import scheduler_loop
-from app.routers import auth, drops, fans, public, webhooks
+from app.routers import auth, broadcasts, drops, fans, public, webhooks
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
 
@@ -27,8 +27,8 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(
     title="DropKit",
-    description="A small Laylo style drop API: drop pages, RSVPs, and release notifications.",
-    version="0.1.0",
+    description="A small Laylo style drop API: drop pages, RSVPs, release notifications, and a mailing list.",
+    version="0.2.0",
     lifespan=lifespan,
 )
 
@@ -37,6 +37,7 @@ app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], all
 
 app.include_router(auth.router)
 app.include_router(drops.router)
+app.include_router(broadcasts.router)
 app.include_router(fans.router)
 app.include_router(public.router)
 app.include_router(webhooks.router)

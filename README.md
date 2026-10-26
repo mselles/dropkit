@@ -1,6 +1,6 @@
 # DropKit
 
-A small Laylo-style drop API built with FastAPI. Artists create drop pages, fans RSVP with email or phone, and everyone gets notified the moment the drop goes live.
+A small Laylo-style drop API built with FastAPI. Artists create drop pages, fans RSVP with email or phone, and everyone gets notified the moment the drop goes live. Artists can also grow a mailing list and send newsletter style broadcasts to it.
 
 ## Run it
 
@@ -24,7 +24,16 @@ Without any API keys, emails and texts **print to your terminal** instead of sen
 6. Open the `/r/...` link from the message. It redirects to your destination URL and records the click.
 7. **GET /drops/{id}/stats** shows RSVPs, sends, and click rate.
 
-To test the scheduler instead, set `release_at` to a minute from now, then call **POST /drops/{id}/schedule**. It fires on its own within 30 seconds.
+### Try a broadcast (newsletter)
+
+1. **POST /a/{handle}/follow** with `{"email": "fan2@example.com", "city": "Atlanta"}`. This is a "join my list" signup with no drop attached.
+2. **GET /broadcasts/audience** shows how many people you'd reach. Add `?city=Atlanta` to narrow it.
+3. **POST /broadcasts** with `{"subject": "New merch", "body": "Hoodies are back.\n\nLimited run.", "link_url": "https://your-shop.com", "link_label": "Shop now"}`. This only creates a draft.
+4. **POST /broadcasts/{id}/send-now** and check your terminal.
+
+Everyone on the artist's list who's opted in gets it, whether they followed or RSVP'd to a drop. Blank lines in `body` become paragraphs. Set `send_sms: true` to text it too, or `city` to target one place.
+
+To test the scheduler instead, set `release_at` to a minute from now, then call **POST /drops/{id}/schedule**. It fires on its own within 30 seconds. Broadcasts work the same way with `send_at` and **POST /broadcasts/{id}/schedule**.
 
 ## Endpoints
 
@@ -35,9 +44,15 @@ To test the scheduler instead, set `release_at` to a minute from now, then call 
 | | `POST /drops/{id}/schedule` · `/unschedule` | Arm or disarm the scheduler |
 | | `POST /drops/{id}/send-now` | Release immediately |
 | | `GET /drops/{id}/stats` | RSVPs, sends, deliveries, clicks by channel |
+| **Broadcasts** | `GET/POST /broadcasts` · `GET/PATCH/DELETE /broadcasts/{id}` | Newsletter style messages to your list |
+| | `GET /broadcasts/audience?send_sms=&city=` | Preview how many people you'd reach |
+| | `POST /broadcasts/{id}/schedule` · `/unschedule` · `/send-now` | Send later or now |
+| | `GET /broadcasts/{id}/stats` | Sends and clicks by channel |
 | **Fans** | `GET /fans?city=&channel=&drop_id=` | Your fan list, filterable |
 | | `GET /fans/{id}/history` | Every message a fan has received |
-| **Public** | `GET /d/{slug}` | Data for the drop page (hides the link until it's live) |
+| **Public** | `GET /a/{handle}` | Artist page data: name plus published drops |
+| | `POST /a/{handle}/follow` | Join the artist's list (no drop needed) |
+| | `GET /d/{slug}` | Data for the drop page (hides the link until it's live) |
 | | `POST /d/{slug}/rsvp` | Fan signup |
 | | `GET /r/{token}` | Click tracking redirect |
 | | `GET/POST /unsubscribe/{token}` | One click unsubscribe |
@@ -50,16 +65,21 @@ To test the scheduler instead, set `release_at` to a minute from now, then call 
 app/
   main.py        app setup, starts the scheduler
   config.py      every setting, read from environment variables
-  models.py      the 5 database tables
+  models.py      the 6 database tables
   schemas.py     request and response shapes, input validation
   auth.py        password hashing and JWT
-  release.py     the release flow: claim → queue → send   ← read this one
+  release.py     the send engine: claim → queue → send   ← read this one
+  services.py    shared logic: fan signup, audiences, stats
   senders.py     email (Resend) and SMS (Twilio), console fallback
   routers/       one file per group of endpoints
 tests/           pytest suite covering the full flow
 ```
 
-`release.py` is the interesting part. `claim_drop` flips a drop to `sending` with a single conditional UPDATE. If the scheduler and a "send now" click race, only one wins, so fans never get double texted.
+`release.py` is the interesting part. `claim_drop` flips a drop to `sending` with a single conditional UPDATE. Drops and broadcasts share the engine. If the scheduler and a "send now" click race, only one wins, so fans never get double texted.
+
+## Changing the database
+
+There are no migrations yet, so after pulling a version that changes `models.py`, delete `dropkit.db` and restart. That wipes your test data. Add Alembic before you have real fans in there.
 
 ## Run the tests
 
@@ -80,5 +100,4 @@ pytest -q
 - **The fan facing drop page.** A frontend that calls `GET /d/{slug}` and `POST /d/{slug}/rsvp`, with a countdown. This is the design opportunity.
 - **A real queue** (arq + Redis) once a drop has thousands of fans. The send loop already works in batches, so it's a contained swap.
 - **Migrations** with Alembic, before you change a table that already holds real data.
-- **Segments**, so you can text only fans in Atlanta about the show.
 - **Instagram DM keyword flow** via the Meta Graph API.

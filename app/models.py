@@ -97,10 +97,31 @@ class RSVP(SQLModel, table=True):
     created_at: datetime = Field(default_factory=utcnow)
 
 
-class Notification(SQLModel, table=True):
-    __table_args__ = (UniqueConstraint("drop_id", "fan_id", "channel"),)
+class Broadcast(SQLModel, table=True):
+    """A newsletter style message to an artist's fans (not tied to a drop)."""
     id: int | None = Field(default=None, primary_key=True)
-    drop_id: int = Field(foreign_key="drop.id", index=True)
+    artist_id: int = Field(foreign_key="artist.id", index=True)
+    subject: str
+    body: str
+    link_url: str | None = None  # optional button; clicks are tracked like drops
+    link_label: str = "Check it out"
+    send_email: bool = True
+    send_sms: bool = False
+    city: str | None = None  # only fans in this city, if set
+    send_at: datetime | None = None
+    status: DropStatus = Field(default=DropStatus.draft, index=True)  # same lifecycle as drops
+    created_at: datetime = Field(default_factory=utcnow)
+
+
+class Notification(SQLModel, table=True):
+    """One message to one fan on one channel, for either a drop or a broadcast."""
+    __table_args__ = (
+        UniqueConstraint("drop_id", "fan_id", "channel"),
+        UniqueConstraint("broadcast_id", "fan_id", "channel"),
+    )
+    id: int | None = Field(default=None, primary_key=True)
+    drop_id: int | None = Field(default=None, foreign_key="drop.id", index=True)
+    broadcast_id: int | None = Field(default=None, foreign_key="broadcast.id", index=True)
     fan_id: int = Field(foreign_key="fan.id", index=True)
     channel: Channel
     status: SendStatus = SendStatus.queued

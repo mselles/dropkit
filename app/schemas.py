@@ -72,11 +72,14 @@ class ChannelStats(BaseModel):
     clicked: int = 0
 
 
-class DropStats(BaseModel):
-    rsvps: int
+class SendStats(BaseModel):
     email: ChannelStats
     sms: ChannelStats
     click_rate: float
+
+
+class DropStats(SendStats):
+    rsvps: int
 
 
 # ---------- public ----------
@@ -144,3 +147,80 @@ class NotificationOut(BaseModel):
     status: SendStatus
     sent_at: datetime | None
     clicked_at: datetime | None
+
+
+# ---------- follow (public artist page) ----------
+class PublicDropSummary(BaseModel):
+    slug: str
+    title: str
+    type: DropType
+    release_at: datetime | None
+    is_live: bool
+
+
+class PublicArtistOut(BaseModel):
+    name: str
+    handle: str
+    drops: list[PublicDropSummary]
+
+
+class FollowIn(RSVPIn):
+    """Same fields and rules as an RSVP: email and/or phone, SMS needs consent."""
+
+
+class FollowOut(BaseModel):
+    ok: bool = True
+    message: str
+
+
+# ---------- broadcasts ----------
+class BroadcastIn(BaseModel):
+    subject: str = Field(min_length=1, max_length=150, description="email subject line")
+    body: str = Field(min_length=1, max_length=10000, description="plain text; blank lines become paragraphs")
+    link_url: str | None = None
+    link_label: str = "Check it out"
+    send_email: bool = True
+    send_sms: bool = False
+    city: str | None = Field(None, description="only fans in this city")
+    send_at: datetime | None = None
+
+    _utc = field_validator("send_at")(lambda cls, v: to_utc(v))
+
+    @model_validator(mode="after")
+    def need_channel(self):
+        if not self.send_email and not self.send_sms:
+            raise ValueError("pick at least one channel (send_email or send_sms)")
+        return self
+
+
+class BroadcastPatch(BaseModel):
+    subject: str | None = Field(None, min_length=1, max_length=150)
+    body: str | None = Field(None, min_length=1, max_length=10000)
+    link_url: str | None = None
+    link_label: str | None = None
+    send_email: bool | None = None
+    send_sms: bool | None = None
+    city: str | None = None
+    send_at: datetime | None = None
+
+    _utc = field_validator("send_at")(lambda cls, v: to_utc(v))
+
+
+class BroadcastOut(BaseModel):
+    id: int
+    subject: str
+    body: str
+    link_url: str | None
+    link_label: str
+    send_email: bool
+    send_sms: bool
+    city: str | None
+    send_at: datetime | None
+    status: DropStatus
+    created_at: datetime
+
+
+class AudienceOut(BaseModel):
+    email: int
+    sms: int
+    total_messages: int
